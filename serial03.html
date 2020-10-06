@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="da-DK">
+<head>
+<meta charset="utf-8">
+<title>Serial</title>
+</head>
+<body>
+<div>Serial Iot</div>
+<button id = "devb">Åben</button>
+<button id = "devc">Luk</button>
+<br><button id = "ctl">Send</button>
+<p id = "txt">Skriv navn og tryk Send</p>
+<input id="inp" type="text"></input>
+<script>
+const txt = document.getElementById('txt');
+const ctl = document.getElementById('ctl');
+const devb = document.getElementById('devb');
+const devc = document.getElementById('devc');
+const inp = document.getElementById('inp');
+
+var port;
+var textEncoder;
+var writableStreamClosed;
+var textDecoder;
+var readableStreamClosed;
+var reader;
+var writer;
+var v;
+
+class LineBreakTransformer {
+    constructor() {
+    // A container for holding stream data until a new line.
+        this.chunks = "";
+    }
+
+    transform(chunk, controller) {
+    // Append new chunks to existing chunks.
+        this.chunks += chunk;
+    // For each line breaks in chunks, send the parsed lines out.
+        const lines = this.chunks.split("\r\n");
+        this.chunks = lines.pop();
+        lines.forEach((line) => controller.enqueue(line));
+    }
+
+    flush(controller) {
+    // When the stream is closed, flush any remaining chunks out.
+        controller.enqueue(this.chunks);
+    }
+}
+
+
+devb.onclick = async () => { 
+    port = await navigator.serial.requestPort();
+    //const ports = await navigator.serial.getPorts();
+    await port.open({ baudrate: 115200 });
+    textEncoder = new TextEncoderStream();
+    writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
+    writer = textEncoder.writable.getWriter();
+    textDecoder = new TextDecoderStream();
+    readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+    //reader = textDecoder.readable.getReader();    
+    reader = textDecoder.readable
+        .pipeThrough(new TransformStream(new LineBreakTransformer()))
+        .getReader();
+    readloop();
+}
+
+devc.onclick = async () => { 
+    reader.cancel();
+    await readableStreamClosed.catch(() => { /* Ignore the error */ });
+    writer.close();
+    await writableStreamClosed;
+    await port.close();
+}
+
+readloop = async () => { 
+    //const reader = port.readable.getReader();
+    //v = '';
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+            reader.releaseLock();
+            break;
+        }
+        txt.innerHTML += value+"<br>";
+    }
+    //txt.innerHTML = v.length;
+    //v = '';
+}
+
+ctl.onclick = async () => { 
+    await writer.write(inp.value+"\r\n");    
+    txt.innerHTML = " ";
+    inp.value = " ";
+    //const writer = port.writable.getWriter();
+    //const data = new Uint8Array([115]); // hello
+    //await writer.write(data);
+    //writer.releaseLock();
+}
+
+
+</script>
+</body>
+</html>
+
